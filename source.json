@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "name": "WhatsAuto · polaca1",
+  "identifier": "app.whatsauto.sidestore",
+  "subtitle": "Tu asistente de WhatsApp con Gemini",
+  "description": "App personal en español con Liquid Glass, contexto por chat y archivo de conversaciones. Necesita tu servidor WhatsAuto.",
+  "iconURL": "https://raw.githubusercontent.com/polaca1/public/main/icon.png",
+  "website": "https://github.com/polaca1/public",
+  "tintColor": "0D7A59",
+  "apps": [
+    {
+      "name": "WhatsAuto",
+      "bundleIdentifier": "app.whatsauto.personal",
+      "developerName": "polaca1",
+      "subtitle": "WhatsApp y Gemini, a tu ritmo",
+      "localizedDescription": "Vincula tu WhatsApp personal por QR o código, controla las respuestas de Gemini, ajusta el tono y guarda el archivo de conversaciones en tu iPhone. Contexto separado por chat y cambio de clave al agotar cuota. Compilada con Xcode 27 y SDK iOS 27. Requiere configurar un servidor HTTPS; no incluye claves API.",
+      "iconURL": "https://raw.githubusercontent.com/polaca1/public/main/icon.png",
+      "tintColor": "0D7A59",
+      "versions": [
+        {
+          "version": "1.0",
+          "buildVersion": "1",
+          "date": "2026-10-11T14:41:33Z",
+          "localizedDescription": "Primera versión: Liquid Glass, Gemini 3.8 Flash, archivo por chat y pausas naturales.",
+          "downloadURL": "https://raw.githubusercontent.com/polaca1/public/main/WhatsAuto.ipa",
+          "size": 266088,
+          "minOSVersion": "17.0"
+        }
+      ]
+    }
+  ],
+  "news": [],
+  "sourceURL": "https://raw.githubusercontent.com/polaca1/public/main/source.json"
+}

@@ -1,0 +1,12 @@
+{
+  "compiledCommit": "afc4b418c4162c2ed99952d52d6afd421ada6c48",
+  "workflowURL": "https://github.com/polaca1/Whatsapp_responder_2/actions/runs/38148158771",
+  "artifact": "WhatsAuto-iOS27-IPA",
+  "ipaSize": 266088,
+  "ipaSHA256": "35f39ae9187670cded8557314ca2b8f7b8467ccba65bcb1452b3e94bd29f2036",
+  "testsPassed": 9,
+  "DTSDKName": "iphoneos27.0",
+  "DTXcode": "2700",
+  "CFBundleIdentifier": "app.whatsauto.personal",
+  "MinimumOSVersion": "17.0"
+}
