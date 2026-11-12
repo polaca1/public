@@ -1,0 +1,23 @@
+name: Build experimental ARMv7 package
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: whatsapp-legacy/source
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y xz-utils dpkg-dev
+      - run: bash scripts/test.sh
+      - run: bash scripts/bootstrap.sh
+      - run: bash scripts/build.sh
+        env:
+          WL_TOOLCHAIN: ${{ github.workspace }}/whatsapp-legacy/source/.tools/toolchain
+          WL_SDK: ${{ github.workspace }}/whatsapp-legacy/source/.tools/patched.sdk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WhatsAppLegacy-experimental-armv7
+          path: whatsapp-legacy/source/packages/*.deb

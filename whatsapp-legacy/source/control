@@ -1,0 +1,9 @@
+Package: com.polaca1.whatsapplegacy
+Name: WhatsApp Legacy (Experimental)
+Version: 0.1.0
+Architecture: iphoneos-arm
+Description: Research build for iOS 10. TLS/WebSocket diagnostics and SQLite only. Cannot link, send or receive WhatsApp messages yet.
+Maintainer: polaca1
+Author: polaca1
+Section: Development
+Depends: firmware (>= 10.0)
