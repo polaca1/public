@@ -2,3 +2,7 @@
 .theos/
 build/
 packages/
+
+__pycache__/
+*.pyc
+.test-piwapp/
