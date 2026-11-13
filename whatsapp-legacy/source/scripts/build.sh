@@ -5,12 +5,15 @@ cd "$(dirname "$0")/.."
 : "${WL_SDK:?Set WL_SDK to the patched iPhoneOS9.3 SDK}"
 mkdir -p build/root/Applications/WhatsAppLegacy.app build/root/DEBIAN packages
 app=build/root/Applications/WhatsAppLegacy.app
-"$WL_TOOLCHAIN/bin/clang" -target armv7-apple-ios10.0 -isysroot "$WL_SDK" -fobjc-arc -IVendor/SocketRocket Sources/App.m Core/wl_frame.c Vendor/SocketRocket/SRWebSocket.m -framework UIKit -framework CoreGraphics -framework Foundation -framework Security -framework CFNetwork -lsqlite3 -licucore -o "$app/WhatsAppLegacy"
-"$WL_TOOLCHAIN/bin/ldid" -S "$app/WhatsAppLegacy"
+python3 scripts/compile-ios.py
+"$WL_TOOLCHAIN/bin/ldid" -SResources/entitlements.plist "$app/WhatsAppLegacy"
 cp Resources/Info.plist "$app/Info.plist"
+cp Resources/tokens.json "$app/tokens.json"
 mkdir -p "$app/Licenses"
 cp Vendor/SocketRocket/LICENSE "$app/Licenses/SocketRocket.txt"
 cp docs/PIWAPP-LICENSE "$app/Licenses/piwapp.txt"
+cp Vendor/SignalProtocol/LICENSE "$app/Licenses/SignalProtocol-GPLv3.txt"
+cp Vendor/MbedTLS/LICENSE "$app/Licenses/MbedTLS.txt"
 cp control build/root/DEBIAN/control
 cat > build/root/DEBIAN/postinst <<'POST'
 #!/bin/sh
@@ -19,5 +22,5 @@ exit 0
 POST
 chmod 755 build/root/DEBIAN/postinst "$app/WhatsAppLegacy"
 find build/root -type d -exec chmod 755 {} +
-dpkg-deb --root-owner-group -Zgzip --build build/root packages/whatsapplegacy_0.1.0_iphoneos-arm.deb
-python3 scripts/verify.py packages/whatsapplegacy_0.1.0_iphoneos-arm.deb
+dpkg-deb --root-owner-group -Zgzip --build build/root packages/whatsapplegacy_0.2.0_iphoneos-arm.deb
+python3 scripts/verify.py packages/whatsapplegacy_0.2.0_iphoneos-arm.deb

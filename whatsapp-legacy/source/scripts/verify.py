@@ -18,4 +18,5 @@ with tempfile.TemporaryDirectory() as tmp:
     assert version==0x000a0000 and signed
     assert all(d.startswith(('/System/Library/','/usr/lib/')) for d in dependencies)
     assert plistlib.loads((app/'Info.plist').read_bytes())['MinimumOSVersion']=='10.0'
+    assert (app/'tokens.json').is_file() and (app/'Licenses/SignalProtocol-GPLv3.txt').is_file()
     print('PASS: ARMv7 32-bit, iOS 10.0 target, signature command, system-only dylibs. Device execution NOT tested.')

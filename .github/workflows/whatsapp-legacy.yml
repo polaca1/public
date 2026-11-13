@@ -10,8 +10,16 @@ jobs:
         working-directory: whatsapp-legacy/source
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y xz-utils dpkg-dev
+      - run: sudo apt-get update && sudo apt-get install -y xz-utils dpkg-dev libsqlite3-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          git clone https://github.com/n-92/piwapp.git .test-piwapp
+          git -C .test-piwapp checkout 5f45e6124991212aedb13fc0fb59f28b8dd012ed
+          python3 -m pip install ./.test-piwapp
       - run: bash scripts/test.sh
+      - run: PIWAPP_SOURCE="$PWD/.test-piwapp" bash scripts/test-native.sh
       - run: bash scripts/bootstrap.sh
       - run: bash scripts/build.sh
         env:

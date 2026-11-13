@@ -3,8 +3,8 @@ Label: WhatsApp Legacy Experimental
 Suite: stable
 Codename: legacy
 Architectures: iphoneos-arm
-Description: Experimental research build. WhatsApp authentication and messaging unavailable.
-Date: Thu, 12 Nov 2026 23:07:15 +0000
+Description: Native text messaging implementation; physical iPhone verification pending.
+Date: Fri, 13 Nov 2026 07:04:53 +0000
 SHA256:
- 05afa9b3bdf583fc1fea755172e6c59e69b1e1684aea6fd8467956bce06ee5e6 562 Packages
- 17fe9b7c8f3d3a213f66146cfe4531d18f674f1754348cafd41fbe1028dd8b8f 416 Packages.gz
+ dbc737876a135a11ae832024ce281814d904eb118419d5b0d917916b533ed6d6 599 Packages
+ 93324be1032c7c8c512cc56d09f6c70c990129527345dfe97d5f227ac3bd89c8 432 Packages.gz

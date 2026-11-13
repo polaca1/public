@@ -506,7 +506,11 @@ static __strong NSData *CRLFCRLF;
     CFHTTPMessageSetHeaderFieldValue(request, CFSTR("Host"), (__bridge CFStringRef)(_url.port ? [NSString stringWithFormat:@"%@:%@", _url.host, _url.port] : _url.host));
         
     NSMutableData *keyBytes = [[NSMutableData alloc] initWithLength:16];
-    SecRandomCopyBytes(kSecRandomDefault, keyBytes.length, keyBytes.mutableBytes);
+    if (SecRandomCopyBytes(kSecRandomDefault, keyBytes.length, keyBytes.mutableBytes) != errSecSuccess) {
+        CFRelease(request);
+        [self _failWithError:[NSError errorWithDomain:SRWebSocketErrorDomain code:2146 userInfo:nil]];
+        return;
+    }
     
     if ([keyBytes respondsToSelector:@selector(base64EncodedStringWithOptions:)]) {
         _secKey = [keyBytes base64EncodedStringWithOptions:0];
@@ -599,20 +603,9 @@ static __strong NSData *CRLFCRLF;
         
         [_outputStream setProperty:(__bridge id)kCFStreamSocketSecurityLevelNegotiatedSSL forKey:(__bridge id)kCFStreamPropertySocketSecurityLevel];
         
-        // If we're using pinned certs, don't validate the certificate chain
-        if ([_urlRequest SR_SSLPinnedCertificates].count) {
-            [SSLOptions setValue:@NO forKey:(__bridge id)kCFStreamSSLValidatesCertificateChain];
-        }
-        
-#if DEBUG
-        self.allowsUntrustedSSLCertificates = YES;
-#endif
-
-        if (self.allowsUntrustedSSLCertificates) {
-            [SSLOptions setValue:@NO forKey:(__bridge id)kCFStreamSSLValidatesCertificateChain];
-            SRFastLog(@"Allowing connection to any root cert");
-        }
-        
+        // Legacy client policy: always validate system trust and hostname, even DEBUG.
+        [SSLOptions setValue:@YES forKey:(__bridge id)kCFStreamSSLValidatesCertificateChain];
+        [SSLOptions setValue:_url.host forKey:(__bridge id)kCFStreamSSLPeerName];
         [_outputStream setProperty:SSLOptions
                             forKey:(__bridge id)kCFStreamPropertySSLSettings];
     }
@@ -996,6 +989,11 @@ static inline BOOL closeCodeIsValid(int closeCode) {
         _currentFrameCount += 1;
     }
     
+    if (frame_header.payload_length > 1024 * 1024 ||
+        (!isControlFrame && _currentFrameData.length > 1024 * 1024 - frame_header.payload_length)) {
+        [self _closeWithProtocolError:@"Message exceeds device memory policy"];
+        return;
+    }
     if (frame_header.payload_length == 0) {
         if (isControlFrame) {
             [self _handleFrameWithData:curData opCode:frame_header.opcode];
@@ -1482,7 +1480,10 @@ static const size_t SRFrameHeaderOverhead = 32;
         }
     } else {
         uint8_t *mask_key = frame_buffer + frame_buffer_size;
-        SecRandomCopyBytes(kSecRandomDefault, sizeof(uint32_t), (uint8_t *)mask_key);
+        if (SecRandomCopyBytes(kSecRandomDefault, sizeof(uint32_t), mask_key) != errSecSuccess) {
+            [self _failWithError:[NSError errorWithDomain:SRWebSocketErrorDomain code:2146 userInfo:nil]];
+            return;
+        }
         frame_buffer_size += sizeof(uint32_t);
         
         // TODO: could probably optimize this with SIMD
@@ -1756,16 +1757,8 @@ static const size_t SRFrameHeaderOverhead = 32;
 //#define SR_ENABLE_LOG
 
 static inline void SRFastLog(NSString *format, ...)  {
-#ifdef SR_ENABLE_LOG
-    __block va_list arg_list;
-    va_start (arg_list, format);
-    
-    NSString *formattedString = [[NSString alloc] initWithFormat:format arguments:arg_list];
-    
-    va_end(arg_list);
-    
-    NSLog(@"[SR] %@", formattedString);
-#endif
+    // Payload logging intentionally disabled in every build configuration.
+    (void)format;
 }
 
 

@@ -1,71 +1,61 @@
 #import <UIKit/UIKit.h>
-#import <Security/Security.h>
+#import <CoreImage/CoreImage.h>
 #import <sqlite3.h>
-#import "SRWebSocket.h"
-
-// Diagnostic build: never represents a WebSocket open as a WhatsApp login.
-@interface WLApp : UIResponder <UIApplicationDelegate, SRWebSocketDelegate, UITableViewDataSource, UITableViewDelegate>
+#import "WLSession.h"
+#import "WLChatEngine.h"
+static NSArray *rows(sqlite3 *db,NSString *chat){NSMutableArray *a=[NSMutableArray array];sqlite3_stmt *s=NULL;const char *sql=chat?"SELECT id,body,outgoing,timestamp,status FROM messages WHERE chat_id=? ORDER BY timestamp,rowid":"SELECT id,title FROM chats ORDER BY rowid DESC";if(sqlite3_prepare_v2(db,sql,-1,&s,NULL)!=SQLITE_OK)return a;if(chat)sqlite3_bind_text(s,1,chat.UTF8String,-1,SQLITE_TRANSIENT);while(sqlite3_step(s)==SQLITE_ROW){const char *i=(const char *)sqlite3_column_text(s,0),*t=(const char *)sqlite3_column_text(s,1);if(!i||!t)continue;NSMutableDictionary *d=[@{@"id":@(i),@"text":@(t)} mutableCopy];if(chat){const char *status=(const char *)sqlite3_column_text(s,4);d[@"outgoing"]=@(sqlite3_column_int(s,2));d[@"status"]=status?@(status):@"";}[a addObject:d];}sqlite3_finalize(s);return a;}
+@interface WLConversation:UIViewController<UITableViewDataSource,UITableViewDelegate,UITextFieldDelegate>
+@property(nonatomic) sqlite3 *db;
+@property(nonatomic,strong) WLChatEngine *engine;
+@property(nonatomic,strong) NSString *jid;
+@property(nonatomic,strong) UITableView *table;
+@property(nonatomic,strong) UITextField *input;
+@property(nonatomic,strong) NSArray *messages;
+@property(nonatomic,strong) NSLayoutConstraint *bottom;
+- (void)reload;
+@end
+@implementation WLConversation
+- (void)viewDidLoad{[super viewDidLoad];self.title=self.jid;self.view.backgroundColor=[UIColor whiteColor];self.table=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];self.table.dataSource=self;self.table.delegate=self;self.table.translatesAutoresizingMaskIntoConstraints=NO;[self.view addSubview:self.table];self.input=[UITextField new];self.input.borderStyle=UITextBorderStyleRoundedRect;self.input.placeholder=@"Mensaje de texto";self.input.returnKeyType=UIReturnKeySend;self.input.delegate=self;self.input.translatesAutoresizingMaskIntoConstraints=NO;[self.view addSubview:self.input];UIButton *send=[UIButton buttonWithType:UIButtonTypeSystem];[send setTitle:@"Enviar" forState:UIControlStateNormal];[send addTarget:self action:@selector(send) forControlEvents:UIControlEventTouchUpInside];send.translatesAutoresizingMaskIntoConstraints=NO;[self.view addSubview:send];self.bottom=[self.input.bottomAnchor constraintEqualToAnchor:self.bottomLayoutGuide.topAnchor constant:-6];[NSLayoutConstraint activateConstraints:@[[self.table.topAnchor constraintEqualToAnchor:self.topLayoutGuide.bottomAnchor],[self.table.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],[self.table.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],[self.table.bottomAnchor constraintEqualToAnchor:self.input.topAnchor constant:-6],[self.input.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:8],[self.input.trailingAnchor constraintEqualToAnchor:send.leadingAnchor constant:-8],[self.input.heightAnchor constraintEqualToConstant:38],self.bottom,[send.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-8],[send.centerYAnchor constraintEqualToAnchor:self.input.centerYAnchor],[send.widthAnchor constraintEqualToConstant:58]]];[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboard:) name:UIKeyboardWillChangeFrameNotification object:nil];[self reload];}
+- (void)keyboard:(NSNotification *)n{CGRect frame=[self.view convertRect:[n.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue] fromView:nil];CGFloat overlap=MAX(0,CGRectGetMaxY(self.view.bounds)-frame.origin.y-self.bottomLayoutGuide.length);self.bottom.constant=-6-overlap;[UIView animateWithDuration:0.25 animations:^{[self.view layoutIfNeeded];}];}
+- (void)send{if(self.input.text.length)[self.engine sendText:self.input.text to:self.jid];}
+- (BOOL)textFieldShouldReturn:(UITextField *)field{[self send];return NO;}
+- (void)reload{self.messages=rows(self.db,self.jid);[self.table reloadData];if(self.messages.count)[self.table scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:self.messages.count-1 inSection:0] atScrollPosition:UITableViewScrollPositionBottom animated:NO];}
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section{return self.messages.count;}
+- (CGFloat)tableView:(UITableView *)table heightForRowAtIndexPath:(NSIndexPath *)path{return MAX(70,38+[self.messages[path.row][@"text"] boundingRectWithSize:CGSizeMake(self.view.bounds.size.width-32,10000) options:NSStringDrawingUsesLineFragmentOrigin attributes:@{NSFontAttributeName:[UIFont systemFontOfSize:16]} context:nil].size.height);}
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path{UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];NSDictionary *m=self.messages[path.row];cell.textLabel.numberOfLines=0;cell.textLabel.font=[UIFont systemFontOfSize:16];cell.textLabel.text=m[@"text"];cell.detailTextLabel.text=[NSString stringWithFormat:@"%@ · %@",[m[@"outgoing"] boolValue]?@"Tú":@"Contacto",m[@"status"]];return cell;}
+- (void)dealloc{[[NSNotificationCenter defaultCenter] removeObserver:self];}
+@end
+@interface WLApp:UIResponder<UIApplicationDelegate,UITableViewDataSource,UITableViewDelegate>
 @property(nonatomic,strong) UIWindow *window;
-@property(nonatomic,strong) UILabel *status;
-@property(nonatomic,strong) SRWebSocket *socket;
+@property(nonatomic) sqlite3 *db;
+@property(nonatomic,strong) WLChatEngine *engine;
+@property(nonatomic,strong) UITableViewController *chatsVC;
 @property(nonatomic,strong) NSArray *chats;
-@property(nonatomic,assign) sqlite3 *database;
+@property(nonatomic,strong) UILabel *status;
+@property(nonatomic,strong) UIImageView *qr;
+@property(nonatomic,strong) WLConversation *conversation;
+@property(nonatomic,strong) UINavigationController *chatNav;
 @end
 @implementation WLApp
-- (UIViewController *)page:(NSString *)title text:(NSString *)text {
-    UIViewController *vc=[UIViewController new]; vc.title=title; vc.view.backgroundColor=[UIColor whiteColor];
-    UITextView *body=[[UITextView alloc] initWithFrame:CGRectZero]; body.editable=NO; body.text=text; body.font=[UIFont systemFontOfSize:17];
-    body.translatesAutoresizingMaskIntoConstraints=NO; [vc.view addSubview:body];
-    [NSLayoutConstraint activateConstraints:@[[body.leadingAnchor constraintEqualToAnchor:vc.view.leadingAnchor constant:12],[body.trailingAnchor constraintEqualToAnchor:vc.view.trailingAnchor constant:-12],[body.topAnchor constraintEqualToAnchor:vc.topLayoutGuide.bottomAnchor constant:12],[body.bottomAnchor constraintEqualToAnchor:vc.bottomLayoutGuide.topAnchor constant:-12]]];
-    return vc;
+- (BOOL)openDB{NSFileManager *fm=[NSFileManager defaultManager];NSURL *dir=[[[fm URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] firstObject] URLByAppendingPathComponent:@"WhatsAppLegacy" isDirectory:YES];NSError *err=nil;if(![fm createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:@{NSFileProtectionKey:NSFileProtectionCompleteUntilFirstUserAuthentication,NSFilePosixPermissions:@0700} error:&err]||![dir setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:&err])return NO;NSString *path=[[dir URLByAppendingPathComponent:@"messages.sqlite"] path];sqlite3 *db=NULL;if(sqlite3_open_v2(path.UTF8String,&db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX,NULL)!=SQLITE_OK){if(db)sqlite3_close(db);return NO;}self.db=db;sqlite3_busy_timeout(db,3000);const char *schema="PRAGMA foreign_keys=ON;BEGIN;CREATE TABLE IF NOT EXISTS chats(id TEXT PRIMARY KEY,title TEXT NOT NULL);CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,chat_id TEXT NOT NULL REFERENCES chats(id),body TEXT NOT NULL,outgoing INTEGER NOT NULL CHECK(outgoing IN(0,1)),timestamp INTEGER NOT NULL,status TEXT NOT NULL);CREATE INDEX IF NOT EXISTS message_order ON messages(chat_id,timestamp);CREATE TABLE IF NOT EXISTS contacts(id TEXT PRIMARY KEY,name TEXT NOT NULL);PRAGMA user_version=1;COMMIT;";if(sqlite3_exec(db,schema,NULL,NULL,NULL)!=SQLITE_OK)return NO;return [fm setAttributes:@{NSFileProtectionKey:NSFileProtectionCompleteUntilFirstUserAuthentication,NSFilePosixPermissions:@0600} ofItemAtPath:path error:&err];}
+- (UIViewController *)info:(NSString *)title text:(NSString *)text{UIViewController *vc=[UIViewController new];vc.title=title;vc.view.backgroundColor=[UIColor whiteColor];UITextView *body=[[UITextView alloc] initWithFrame:vc.view.bounds];body.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;body.editable=NO;body.font=[UIFont systemFontOfSize:16];body.text=text;[vc.view addSubview:body];return vc;}
+- (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts{
+ self.window=[[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];if(![self openDB]||!(self.engine=[[WLChatEngine alloc] initWithDatabase:self.db])){self.window.rootViewController=[self info:@"Error local" text:@"No se pudo preparar el almacenamiento protegido."];[self.window makeKeyAndVisible];return YES;}
+ self.chatsVC=[[UITableViewController alloc] initWithStyle:UITableViewStylePlain];self.chatsVC.title=@"Chats";self.chatsVC.tableView.dataSource=self;self.chatsVC.tableView.delegate=self;self.chatsVC.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCompose target:self action:@selector(compose)];self.chatNav=[[UINavigationController alloc] initWithRootViewController:self.chatsVC];
+ UIViewController *link=[UIViewController new];link.title=@"Vinculación";link.view.backgroundColor=[UIColor whiteColor];self.status=[UILabel new];self.status.numberOfLines=0;self.status.textAlignment=NSTextAlignmentCenter;self.status.text=@"Desconectado";self.status.translatesAutoresizingMaskIntoConstraints=NO;[link.view addSubview:self.status];self.qr=[UIImageView new];self.qr.contentMode=UIViewContentModeScaleAspectFit;self.qr.translatesAutoresizingMaskIntoConstraints=NO;[link.view addSubview:self.qr];[NSLayoutConstraint activateConstraints:@[[self.status.topAnchor constraintEqualToAnchor:link.topLayoutGuide.bottomAnchor constant:12],[self.status.leadingAnchor constraintEqualToAnchor:link.view.leadingAnchor constant:10],[self.status.trailingAnchor constraintEqualToAnchor:link.view.trailingAnchor constant:-10],[self.status.heightAnchor constraintEqualToConstant:90],[self.qr.topAnchor constraintEqualToAnchor:self.status.bottomAnchor constant:10],[self.qr.centerXAnchor constraintEqualToAnchor:link.view.centerXAnchor],[self.qr.widthAnchor constraintEqualToConstant:280],[self.qr.heightAnchor constraintEqualToConstant:280]]];link.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"Conectar" style:UIBarButtonItemStylePlain target:self.engine.session action:@selector(connect)];link.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"Cerrar" style:UIBarButtonItemStylePlain target:self.engine.session action:@selector(disconnect)];
+ UIViewController *contacts=[self info:@"Contactos" text:@"Puedes iniciar un chat desde Chats > Nuevo e introducir el número completo con prefijo internacional. La sincronización de la agenda todavía está pendiente."];
+ UIViewController *settings=[self info:@"Ajustes" text:@"WhatsApp Legacy 0.2.0 experimental\n\nConexión directa. Noise, QR, Keychain y Signal locales. Texto individual con descubrimiento de dispositivos, preclaves y bandeja de salida persistente.\n\nLa vinculación y la mensajería desde un iPhone físico aún necesitan verificarse. No hay soporte para multimedia, grupos ni recepción permanente en segundo plano.\n\nLas claves no se registran en logs. Cierra la sesión desde el teléfono principal para revocar este dispositivo. Código y licencias: github.com/polaca1/public/tree/main/whatsapp-legacy/source"];
+ UITabBarController *tabs=[UITabBarController new];tabs.viewControllers=@[self.chatNav,[[UINavigationController alloc] initWithRootViewController:link],[[UINavigationController alloc] initWithRootViewController:contacts],[[UINavigationController alloc] initWithRootViewController:settings]];for(UINavigationController *nav in tabs.viewControllers)nav.tabBarItem.title=nav.topViewController.title;self.window.rootViewController=tabs;
+ __weak WLApp *weak=self;self.engine.session.onStatus=^(NSString *status){weak.status.text=status;};self.engine.session.onQR=^(NSString *payload){[weak showQR:payload];};self.engine.onError=^(NSString *message){[weak error:message];};self.engine.onChange=^{[weak reload];};self.engine.onQueued=^(NSString *text){if([weak.conversation.input.text isEqual:text])weak.conversation.input.text=@"";};[self reload];[self.window makeKeyAndVisible];return YES;
 }
-- (BOOL)openStore {
-    NSFileManager *fm=[NSFileManager defaultManager]; NSURL *dir=[[fm URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] firstObject]; dir=[dir URLByAppendingPathComponent:@"WhatsAppLegacy" isDirectory:YES];
-    NSError *error=nil;
-    if (![fm createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:@{NSFileProtectionKey:NSFileProtectionCompleteUntilFirstUserAuthentication,NSFilePosixPermissions:@0700} error:&error]) return NO;
-    if (![dir setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:&error]) return NO;
-    NSString *path=[[dir URLByAppendingPathComponent:@"messages.sqlite"] path]; sqlite3 *db=NULL;
-    if (sqlite3_open_v2(path.UTF8String,&db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX,NULL)!=SQLITE_OK) { if(db)sqlite3_close(db); return NO; }
-    self.database=db; sqlite3_busy_timeout(db,3000);
-    const char *schema="PRAGMA foreign_keys=ON; BEGIN; CREATE TABLE IF NOT EXISTS chats(id TEXT PRIMARY KEY,title TEXT NOT NULL); CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,chat_id TEXT NOT NULL REFERENCES chats(id),body TEXT NOT NULL,outgoing INTEGER NOT NULL CHECK(outgoing IN(0,1)),timestamp INTEGER NOT NULL,status TEXT NOT NULL); CREATE INDEX IF NOT EXISTS message_order ON messages(chat_id,timestamp); CREATE TABLE IF NOT EXISTS contacts(id TEXT PRIMARY KEY,name TEXT NOT NULL); PRAGMA user_version=1; COMMIT;";
-    if(sqlite3_exec(db,schema,NULL,NULL,NULL)!=SQLITE_OK) {sqlite3_exec(db,"ROLLBACK",NULL,NULL,NULL); return NO;}
-    if (![fm setAttributes:@{NSFileProtectionKey:NSFileProtectionCompleteUntilFirstUserAuthentication,NSFilePosixPermissions:@0600} ofItemAtPath:path error:&error]) return NO;
-    NSMutableArray *rows=[NSMutableArray array]; sqlite3_stmt *s=NULL;
-    if(sqlite3_prepare_v2(db,"SELECT id,title FROM chats ORDER BY title",-1,&s,NULL)!=SQLITE_OK)return NO;
-    int rc; while((rc=sqlite3_step(s))==SQLITE_ROW) { const char *i=(const char *)sqlite3_column_text(s,0), *t=(const char *)sqlite3_column_text(s,1); if(i&&t)[rows addObject:@{@"id":@(i),@"title":@(t)}]; }
-    sqlite3_finalize(s); self.chats=rows; return rc==SQLITE_DONE;
-}
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
-    BOOL stored=[self openStore];
-    self.window=[[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    UITabBarController *tabs=[UITabBarController new];
-    UITableViewController *chats=[[UITableViewController alloc] initWithStyle:UITableViewStylePlain]; chats.title=@"Chats"; chats.tableView.dataSource=self; chats.tableView.delegate=self;
-    if(!self.chats.count){UILabel *empty=[UILabel new]; empty.text=@"Sin conversaciones. Vinculación pendiente.";empty.textAlignment=NSTextAlignmentCenter;empty.numberOfLines=0;chats.tableView.backgroundView=empty;}
-    UIViewController *contacts=[self page:@"Contactos" text:@"No hay contactos sincronizados. La sincronización necesita autenticación WhatsApp, todavía no implementada."];
-    UIViewController *link=[self page:@"Vinculación" text:@"Build experimental 0.1.0.\n\nNo se puede vincular todavía. Faltan Noise, validación de certificados del protocolo, QR real y sesiones Signal.\n\nLa prueba de transporte abre una conexión TLS/WebSocket directa; no autentica ni envía mensajes."];
-    link.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"Probar WSS" style:UIBarButtonItemStylePlain target:self action:@selector(connect)];
-    UIViewController *settings=[self page:@"Ajustes" text:stored?@"SQLite local preparado, sin datos de ejemplo.\n\nNo se han generado credenciales. No se registran cargas útiles ni secretos.\n\nSin servidor intermedio. Mensajería y funcionamiento en un iPhone físico: no verificados.":@"Error preparando SQLite. No uses este build para guardar conversaciones."];
-    self.status=[[UILabel alloc] initWithFrame:CGRectMake(0,0,300,55)]; self.status.numberOfLines=0;self.status.font=[UIFont systemFontOfSize:12];self.status.textAlignment=NSTextAlignmentCenter;self.status.text=@"Sin conexión • Sin autenticación";
-    link.navigationItem.titleView=self.status;
-    NSMutableArray *controllers=[NSMutableArray array]; for(UIViewController *vc in @[chats,contacts,link,settings]){UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:vc];nav.tabBarItem.title=vc.title;[controllers addObject:nav];}
-    tabs.viewControllers=controllers;self.window.rootViewController=tabs;[self.window makeKeyAndVisible]; return YES;
-}
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {return self.chats.count;}
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];cell.textLabel.text=self.chats[indexPath.row][@"title"];return cell;}
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Mensajería pendiente" message:@"Este build no puede enviar ni recibir mensajes." preferredStyle:UIAlertControllerStyleAlert];[alert addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];[self.window.rootViewController presentViewController:alert animated:YES completion:nil];}
-- (void)connect {
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(disconnect) object:nil];
-    if(self.socket) {self.socket.delegate=nil;[self.socket close];self.socket=nil;}
-    NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"wss://web.whatsapp.com/ws/chat"] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:20];
-    [request setValue:@"https://web.whatsapp.com" forHTTPHeaderField:@"Origin"];
-    self.status.text=@"Conectando TLS/WebSocket…"; self.socket=[[SRWebSocket alloc] initWithURLRequest:request];self.socket.delegate=self;[self.socket open];
-}
-- (void)webSocketDidOpen:(SRWebSocket *)webSocket {if(webSocket==self.socket){self.status.text=@"WebSocket abierto • Sin autenticar";[self performSelector:@selector(disconnect) withObject:nil afterDelay:15];}}
-- (void)webSocket:(SRWebSocket *)webSocket didFailWithError:(NSError *)error {if(webSocket==self.socket){self.status.text=[NSString stringWithFormat:@"Error transporte (%ld) • Sin autenticar",(long)error.code];self.socket=nil;}}
-- (void)webSocket:(SRWebSocket *)webSocket didReceiveMessage:(id)message { /* Do not log untrusted payloads or imply authentication. */ }
-- (void)webSocket:(SRWebSocket *)webSocket didCloseWithCode:(NSInteger)code reason:(NSString *)reason wasClean:(BOOL)clean {if(webSocket==self.socket){self.status.text=[NSString stringWithFormat:@"Desconectado (%ld) • Sin autenticar",(long)code];self.socket=nil;}}
-- (void)disconnect {[NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(disconnect) object:nil];self.socket.delegate=nil;[self.socket close];self.socket=nil;self.status.text=@"Sin conexión • Sin autenticación";}
-- (void)applicationDidEnterBackground:(UIApplication *)application {[self disconnect];}
-- (void)dealloc {if(_database)sqlite3_close(_database);}
+- (void)showQR:(NSString *)payload{if(!payload){self.qr.image=nil;return;}CIFilter *filter=[CIFilter filterWithName:@"CIQRCodeGenerator"];[filter setValue:[payload dataUsingEncoding:NSUTF8StringEncoding] forKey:@"inputMessage"];[filter setValue:@"M" forKey:@"inputCorrectionLevel"];CIImage *image=filter.outputImage;if(!image){[self error:@"No se pudo dibujar el QR"];return;}CIContext *context=[CIContext contextWithOptions:@{kCIContextUseSoftwareRenderer:@YES}];CGImageRef rendered=[context createCGImage:[image imageByApplyingTransform:CGAffineTransformMakeScale(6,6)] fromRect:CGRectApplyAffineTransform(image.extent,CGAffineTransformMakeScale(6,6))];self.qr.image=[UIImage imageWithCGImage:rendered];CGImageRelease(rendered);self.qr.layer.magnificationFilter=kCAFilterNearest;}
+- (void)error:(NSString *)message{self.status.text=message;UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"WhatsApp Legacy" message:message preferredStyle:UIAlertControllerStyleAlert];[alert addAction:[UIAlertAction actionWithTitle:@"Aceptar" style:UIAlertActionStyleDefault handler:nil]];UIViewController *top=self.window.rootViewController;while(top.presentedViewController)top=top.presentedViewController;if(![top isKindOfClass:[UIAlertController class]])[top presentViewController:alert animated:YES completion:nil];}
+- (void)reload{self.chats=rows(self.db,nil);[self.chatsVC.tableView reloadData];[self.conversation reload];UILabel *empty=[UILabel new];empty.text=@"Sin conversaciones locales";empty.textAlignment=NSTextAlignmentCenter;self.chatsVC.tableView.backgroundView=self.chats.count?nil:empty;}
+- (void)compose{UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Nuevo chat" message:@"Número con prefijo internacional, sin + ni espacios" preferredStyle:UIAlertControllerStyleAlert];[alert addTextFieldWithConfigurationHandler:^(UITextField *field){field.keyboardType=UIKeyboardTypePhonePad;field.placeholder=@"34612345678";}];[alert addAction:[UIAlertAction actionWithTitle:@"Cancelar" style:UIAlertActionStyleCancel handler:nil]];__weak WLApp *weak=self;[alert addAction:[UIAlertAction actionWithTitle:@"Abrir" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){NSString *number=alert.textFields.firstObject.text;if(number.length<5||number.length>20||[number rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789"] invertedSet]].location!=NSNotFound){[weak error:@"Número no válido"];return;}[weak conversation:[number stringByAppendingString:@"@s.whatsapp.net"]];}]];[self.chatNav presentViewController:alert animated:YES completion:nil];}
+- (void)conversation:(NSString *)jid{self.conversation=[WLConversation new];self.conversation.db=self.db;self.conversation.engine=self.engine;self.conversation.jid=jid;[self.chatNav pushViewController:self.conversation animated:YES];}
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section{return self.chats.count;}
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)index{UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];cell.textLabel.text=self.chats[index.row][@"text"];cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;return cell;}
+- (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)index{[self conversation:self.chats[index.row][@"id"]];}
+- (void)applicationWillResignActive:(UIApplication *)app{[self.engine.session disconnect];self.qr.image=nil;}
 @end
 int main(int argc,char **argv){@autoreleasepool{return UIApplicationMain(argc,argv,nil,NSStringFromClass([WLApp class]));}}
